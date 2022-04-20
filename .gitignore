@@ -1,2 +1,5 @@
-*.pyc
-*00*.py
+__pycache__/
+.vscode/
+
+*.py[cod]
+*.sqlite3
