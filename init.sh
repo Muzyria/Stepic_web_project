@@ -1,40 +1,83 @@
-### Создание проекта в рамках курса на stepic.org
+#!/bin/bash
 
-# $ mkdir -p /home/box/web
-# $ git clone https://github.com/pilosus/stepic_web_project.git /home/box/web
-# $ bash /home/box/web/init.sh
-# if git files changed locally, stash or reset:
-# $ git reset --hard
+WORK_DIR="/home/box"
+PROJ_DIR="$WORK_DIR/web"
+DJ_PROJ_DIR="$PROJ_DIR/ask"
+DJ_APP_NAME="qa"
+DB_NAME="ask"
+DB_USER_NAME="box"
 
-# create symbolic link to a new nginx config
-sudo -s ln -sf /home/box/web/etc/nginx.conf  /etc/nginx/sites-enabled/django.conf
-sudo -s rm /etc/nginx/sites-enabled/default
 
-# restart nginx
-sudo -s /etc/init.d/nginx restart
+init_nginx()
+{
+	# include our settings to nginx main config
+	sudo ln -sf $PROJ_DIR/etc/nginx.conf /etc/nginx/sites-enabled/nginx.conf
+	# delete default location settings
+	sudo rm -rf /etc/nginx/sites-enabled/default
+	# start/restart nginx
+	sudo /etc/init.d/nginx restart
+}
 
-# in /etc/nginx/sites-enabled/default
-# first two comment lines with listen 80 /server_default
+init_gunicorn()
+{
+	# delete example settings
+	sudo rm -f /etc/gunicorn.d/*
+	# include settings for hello.py to gunicorn
+	sudo ln -sf $PROJ_DIR/etc/hello.conf /etc/gunicorn.d/hello.conf
+	# include settings for app ask to gunicorn 
+	sudo ln -sf $PROJ_DIR/etc/ask.conf /etc/gunicorn.d/ask.conf
+	# start gunicorn
+	sudo /etc/init.d/gunicorn restart
+}
 
-# install lib needed for mysql-python package
-#sudo -s apt-get install libmysqlclient-dev
+init_mysql()
+{
+	# Delete old settings
+	sudo rm -f /etc/mysql/conf.d/mysql.cnf
+	# Start MySQL
+	sudo /etc/init.d/mysql start
+	# Create database
+	sudo mysql -u root -e "create database if not exists $DB_NAME;"
+	# Create user with privileges to manage this database
+	sudo mysql -u root -e "grant all privileges on $DB_NAME.* to\
+		'$DB_USER_NAME'@'localhost' with grant option;"
+	# Put MySQL setups
+	sudo ln -sf $PROJ_DIR/etc/mysql.cnf /etc/mysql/conf.d/mysql.cnf
+	# Restart MySQL
+	sudo /etc/init.d/mysql restart
+	# Create migrations
+	$DJ_PROJ_DIR/manage.py makemigrations $DJ_APP_NAME
+	# Migrate them to MySQL
+	$DJ_PROJ_DIR/manage.py migrate
+}
 
-# run MySQL & create DB
-sudo -s /etc/init.d/mysql start && \
-    mysql -uroot -e "create database django"
 
-# creare symbolic links to gunicorn configs
-#sudo -s ln -sf /home/box/web/etc/hello.py  /etc/gunicorn.d/hello.py
-#sudo -s ln -sf /home/box/web/etc/django-gunicorn.conf  /etc/gunicorn.d/django-gunicorn.conf
-
-# 
-cd /home/box/web && \
-    virtualenv venv && \
-    source venv/bin/activate && \
-    pip install -r requirements/production.txt && \
-    export PYTHONPATH=$(pwd):$PYTHONPATH && \
-    cd /home/box/web/ask && \
-    python manage.py migrate && \
-    exec gunicorn --bind=0.0.0.0:8000 --workers=4 ask.wsgi:application
-
-#exec gunicorn -с ../etc/django-gunicorn.conf ask.wsgi:application
+################
+####  MAIN  ####
+################
+case "$1" in
+	init)
+		init_nginx
+		init_gunicorn
+		init_mysql
+	;;
+	start)
+		sudo /etc/init.d/nginx start
+		sudo /etc/init.d/gunicorn start
+		sudo /etc/init.d/mysql start
+	;;
+	restart)
+		sudo /etc/init.d/nginx restart
+		sudo /etc/init.d/gunicorn restart
+		sudo /etc/init.d/mysql restart
+	;;
+	stop)
+		sudo /etc/init.d/nginx stop
+		sudo /etc/init.d/gunicorn stop
+		sudo /etc/init.d/mysql stop
+	;;
+	*)
+		echo "Usage: $0 {init|start|stop|restart}" >&2
+		exit 1
+	;;
+esac
